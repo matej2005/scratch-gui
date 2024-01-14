@@ -9,6 +9,7 @@ export default async function ({ addon, console, msg }) {
   let Cblocks = ["control_forever", "control_if", "control_repeat", "control_if_else", "control_repeat_until", "control_while"]
   let preventUpdate = false;
   let myTabID = 4;
+  
   const manager = document.createElement("div");
   manager.classList.add(addon.tab.scratchClass("asset-panel_wrapper"), "sa-block-to-text");
 

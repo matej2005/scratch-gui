@@ -4,7 +4,7 @@ export default async function ({ addon, console, msg }) {
   const debug = console.log;
   const OnlyEditingTarget = addon.settings.get("target");
 
-  let inputsOPs = ['math_number', 'math_positive_number', "math_whole_number", 'motion_goto_menu', "text"]
+  let inputsOPs = ['math_number', 'math_positive_number', "math_whole_number", 'motion_goto_menu', "text", "argument_reporter_string_number"]
   let ignoreBlocks = ["procedures_prototype"]
   let Cblocks = ["control_forever", "control_if", "control_repeat", "control_if_else", "control_repeat_until", "control_while"]
   let preventUpdate = false;
@@ -72,25 +72,25 @@ export default async function ({ addon, console, msg }) {
     var inputBlock = blocks[input]//block that has input info
     var nextInput = null
     function getInputValue(block) {
-      if (block==undefined){
+      if (block == undefined) {
         return
       }
       let inputOpcode = block.opcode
       let v
-      if (inputsOPs.includes(inputOpcode)){
+      if (inputsOPs.includes(inputOpcode)) {
         //virtual block, has value
         let fieldValue = block.fields
         for (let fl in fieldValue) {
           v = convertInput(inputOpcode, fieldValue[fl].value)
         }
         nextInput = null
-        
+
         return v
-      }else{
+      } else {
         //inner block
         let inputs = block.inputs
-        for (let IN in inputs){
-            nextInput = inputs[IN].block
+        for (let IN in inputs) {
+          nextInput = inputs[IN].block
         }
         v = "(" + inputOpcode
 
@@ -100,19 +100,19 @@ export default async function ({ addon, console, msg }) {
     value = getInputValue(inputBlock)
     let closeN = 0
     let InCouter = 10 //max inputs
-    while (1){
-      if (nextInput != null){
+    while (1) {
+      if (nextInput != null) {
         //return value
-        closeN ++
+        closeN++
         value += getInputValue(blocks[nextInput])
-      }else{
+      } else {
         value += ")".repeat(closeN)
         return value
       }
-      if (!InCouter){
+      if (!InCouter) {
         return value
       }
-      InCouter --
+      InCouter--
     }
   }
   function handleBlockDefinition(block, sprite) {
@@ -121,15 +121,78 @@ export default async function ({ addon, console, msg }) {
     let mutation = blocks[prototype].mutation
     return "function " + mutation.proccode + "(" + "){"
   }
+  function handleSubstack(_block, _sprite) {
+    let blocks = _sprite.blocks._blocks;//blocks in sprite
+    let text = ""
+    let block = _block
+    let a = 4
+    let substacks = new Array()
+    let substack = -1
+    while (1) {
+      debug(block)
+      let opcode = block.opcode
+      var id = block.id
+      let next = block.next
+      let afterC
+      if (Cblocks.includes(opcode)) {//C block
+        if ("SUBSTACK" in block.inputs) {
+          substack++//increase counter
+          text += "\t".repeat(substack) + opcode + "{\r\n"
+          substacks[substack] = new Object //create new object for each substack
+          substacks[substack].inside = block.inputs["SUBSTACK"].block//get some values in object
+          substacks[substack].next = block.next
+          afterC = block.next
+          next = block.inputs["SUBSTACK"].block//get next block.id
+
+        }
+      } else {//normal block
+
+        text += "\t".repeat(substack) + opcode + "\r\n"
+        debug(opcode)
+        debug(substacks)
+        debug(substack)
+        /*if (substacks[substack].next == id) {
+          text += "\r\n"+"\t".repeat(substack)+"}"
+          next = substacks[substack].next
+          substack --
+        }else{*/
+        if (next != undefined) {//next block
+          next = block.next
+          //debug("next: "+next)
+        } else {//return after C
+          next = substacks[substack].next
+          //debug("next: "+block.next)
+          text += "\r\n" + "\t".repeat(substack) + "}"
+          substack--
+          if (substack === 1) {
+            break
+            //}
+          }
+        }
+
+      }
+      if (!a) {
+        break
+      }
+      if (next != undefined) {
+        block = blocks[next]                 //get block[id]
+      }
+      a--
+    }
+
+    debug(text)
+    return text
+  }
   function printText() {
     const editingTarget = vm.runtime.getEditingTarget();
+    //debug(vm)
     //let sprite = new Set(vm.runtime.targets.map((i) => i.sprite))
     let sprite = new Set(vm.runtime.targets)
     //debug(vm.runtime.targets)
     //const editingTarget = vm.runtime.getEditingTarget();
     //debug(editingTarget);
     //debug(sprite)
-    if (OnlyEditingTarget){
+    if (OnlyEditingTarget) {
       sprite = [editingTarget]
     }
     sprite.forEach((_sprite, i) => {//sprites
@@ -169,6 +232,7 @@ export default async function ({ addon, console, msg }) {
               }
               text += blockOpcode
               if (Cblocks.includes(blockOpcode)) {
+                handleSubstack(block, _sprite)
                 text += "{"
                 if (!"SUBSTACK" in block.inputs) {
                   text += "\r\n}"

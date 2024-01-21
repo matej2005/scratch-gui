@@ -1,4 +1,4 @@
-
+/*Some parts of the code are used from the Variable Manager.*/
 export default async function ({ addon, console, msg }) {
   const vm = addon.tab.traps.vm;
   const debug = console.log;
@@ -33,13 +33,9 @@ export default async function ({ addon, console, msg }) {
   textTabText.innerText = msg("code");
   textTab.appendChild(textTabText);
   function translateBlocksToText() {
-
   }
   function convertInput(input, value) {
-    //debug(input)
-    if (input === 'math_number' || input === 'math_positive_number' || input === "text") {
-      return "(" + value + ")"
-    }
+    if (input === 'math_number' || input === 'math_positive_number' || input === "text") return "(" + value + ")"
   }
   function findTopLevel(sprite) {
     var TopBlocks = new Array()
@@ -59,65 +55,88 @@ export default async function ({ addon, console, msg }) {
   }
   function isEmpty(obj) {
     for (const prop in obj) {
-      if (Object.hasOwn(obj, prop)) {
-        return false;
-      }
+      if (Object.hasOwn(obj, prop)) return false
     }
     return true;
   }
-  function getInputOfBlock(input, sprite) {
-    let blocks = sprite.blocks._blocks;//blocks in sprite
+  function getInputOfBlock(input /*only ID of input*/, block, sprite) {
+    var blocks = sprite.blocks._blocks;//blocks in sprite
 
-    var value
-    var inputBlock = blocks[input]//block that has input info
     var nextInput = null
-    function getInputValue(block) {
-      if (block == undefined) {
-        return
-      }
-      let inputOpcode = block.opcode
-      let v
-      if (inputsOPs.includes(inputOpcode)) {
-        //virtual block, has value
+    function getInputValue(block, _opcode, _Ins) {//get values of complex input
+      if (block == undefined) return
+
+      let out = ""
+      if (inputsOPs.includes(block.opcode)) {//virtual block, has value
         let fieldValue = block.fields
         for (let fl in fieldValue) {
-          v = convertInput(inputOpcode, fieldValue[fl].value)
+          if (!_Ins) {
+            out = fieldValue[fl].value
+
+          }else{
+            out = convertInput(block.opcode, fieldValue[fl].value)
+
+          }
         }
         nextInput = null
 
-        return v
-      } else {
-        //inner block
-        let inputs = block.inputs
+      } else { //inner block, more complex
+        let inputs = block.inputs//id
+        let a
         for (let IN in inputs) {
           nextInput = inputs[IN].block
+          out += getOneInputCell(nextInput, block.opcode)
+          a++
         }
-        v = "(" + inputOpcode
+      }
+      if (!_Ins) {
+        out = _opcode + "(" + out + ")"
+      }
+      return out
 
-        return v
+    }
+    function getOneInputCell(_nextInput, _opcode, _Ins) {
+      nextInput = _nextInput
+      let closeN = 0
+      let InCouter = 5 //max inputs
+      let out = ""
+      while (1) {
+        if (nextInput != null) {
+          closeN++
+          out += "" + getInputValue(blocks[nextInput], _opcode, _Ins)
+        } else {
+          //out += "".repeat(closeN-_Ins)
+          return out
+        }
+        if (InCouter == 0) {
+          return out
+        }
+        InCouter--
       }
     }
-    value = getInputValue(inputBlock)
-    let closeN = 0
-    let InCouter = 10 //max inputs
-    while (1) {
-      if (nextInput != null) {
-        //return value
-        closeN++
-        value += getInputValue(blocks[nextInput])
-      } else {
-        value += ")".repeat(closeN)
-        return value
+    let out = ""
+    let inputs = blocks[input].inputs//get inputs of input
+    let opcode = blocks[input].opcode//get opcode of input
+    let Ins = 0
+    if (isEmpty(inputs)) {//direct input
+      for (let fl in blocks[input].fields) {
+        //return convertInput(blocks[input].opcode, blocks[input].fields[fl].value)
+        return blocks[input].fields[fl].value
       }
-      if (!InCouter) {
-        return value
+    } else {//complex input
+      for (let IN in inputs) {
+        nextInput = inputs[IN].block
+        out += getOneInputCell(nextInput, opcode, Ins)
+        Ins++
       }
-      InCouter--
+      //return "("+out+")"
+      return out
     }
+    return null
   }
-  function handleBlockDefinition(block, sprite) {
+  function handleBlockDefinition(_block, sprite) {
     let blocks = sprite.blocks._blocks;//blocks in sprite
-    let prototype = block.inputs.custom_block.block
+    let prototype = _block.inputs.custom_block.block
     let mutation = blocks[prototype].mutation
     return "function " + mutation.proccode + "(" + "){"
   }
@@ -127,17 +146,18 @@ export default async function ({ addon, console, msg }) {
     let block = _block
     let a = 4
     let substacks = new Array()
-    let substack = -1
+    let substack = 0
     while (1) {
       debug(block)
       let opcode = block.opcode
-      var id = block.id
+      let inputs = block.inputs
+      //var id = block.id
       let next = block.next
       let afterC
       if (Cblocks.includes(opcode)) {//C block
         if ("SUBSTACK" in block.inputs) {
+          text += "\r\n"+"....".repeat(substack) + opcode + "{\r\n"
           substack++//increase counter
-          text += "\t".repeat(substack) + opcode + "{\r\n"
           substacks[substack] = new Object //create new object for each substack
           substacks[substack].inside = block.inputs["SUBSTACK"].block//get some values in object
           substacks[substack].next = block.next
@@ -146,8 +166,15 @@ export default async function ({ addon, console, msg }) {
 
         }
       } else {//normal block
+        let inputText = ""
+        for (var IN in inputs) {
+          if (inputs[IN].name != "SUBSTACK") {
+            inputText += "(" + getInputOfBlock(inputs[IN].block, block, _sprite) + ")"//inputs
+          }
+        }//each input
+        text += "....".repeat(substack) + opcode + inputText+"\r\n"
 
-        text += "\t".repeat(substack) + opcode + "\r\n"
+        //text += "\t".repeat(substack) + opcode + "\r\n"
         debug(opcode)
         debug(substacks)
         debug(substack)
@@ -160,13 +187,19 @@ export default async function ({ addon, console, msg }) {
           next = block.next
           //debug("next: "+next)
         } else {//return after C
-          next = substacks[substack].next
+          if (!isEmpty(substacks[substack])) {
+            next = substacks[substack].next
+          }
           //debug("next: "+block.next)
-          text += "\r\n" + "\t".repeat(substack) + "}"
+          //text += "" + "\t".repeat(substack) + "}\r\n"
+
           substack--
-          if (substack === 1) {
-            break
-            //}
+          if (substack <= 0) {
+            substack = 0
+          }
+          text += "" + "....".repeat(substack) + "}\r\n"
+          if (substack === 0) {
+            break;
           }
         }
 
@@ -228,10 +261,10 @@ export default async function ({ addon, console, msg }) {
             } else {
               text += "\r\n";
               if (inside) {
-                text += ".    ";
+                text += ".    .";
               }
               text += blockOpcode
-              if (Cblocks.includes(blockOpcode)) {
+              /*if (Cblocks.includes(blockOpcode)) {
                 handleSubstack(block, _sprite)
                 text += "{"
                 if (!"SUBSTACK" in block.inputs) {
@@ -244,21 +277,23 @@ export default async function ({ addon, console, msg }) {
                     inside = true
                   }
                 }
-
-              }
-
-
+              }*/
             }
             for (var IN in inputs) {
               if (inputs[IN].name != "SUBSTACK") {
-                text += (getInputOfBlock(inputs[IN].block, _sprite))//inputs
+                text += "(" + getInputOfBlock(inputs[IN].block, block, _sprite) + ")"//inputs
               }
             }//each input
             debug("new opcode: " + blockOpcode + ", id: " + ID + ", next: " + nextID + ", top: " + blocks[ID].topLevel + ", fallback: " + fallback + ", inside: " + inside)
             return text
           }
           if (!inputsOPs.includes(blockOpcode) || inputsOPs.includes(ignoreBlocks)) {
-            CodeCell.textContent += handleBlock(ID, _sprite)
+            if (Cblocks.includes(blockOpcode)) {
+              CodeCell.textContent += handleSubstack(block, _sprite)
+            } else {
+              CodeCell.textContent += handleBlock(ID, _sprite)
+            }
+            //CodeCell.textContent += handleBlock(ID, _sprite)
             if (nextID == undefined) {
               if (inside) {
                 CodeCell.textContent += "\r\n}"
@@ -287,6 +322,7 @@ export default async function ({ addon, console, msg }) {
 
 
       CodeCell.innerHTML = CodeCell.innerHTML.replace(/\r\n?/g, '<br />');//hack for inserting line break
+
     });//each sprite
     debug("done")
   }
